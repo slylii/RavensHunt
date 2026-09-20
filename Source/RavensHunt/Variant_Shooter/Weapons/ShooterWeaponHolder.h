@@ -32,8 +32,9 @@ public:
 	/** Plays the firing montage for the weapon */
 	virtual void PlayFiringMontage(UAnimMontage* Montage) = 0;
 
-	/** Applies weapon recoil to the owner */
 	virtual void AddWeaponRecoil(float Recoil) = 0;
+
+	virtual void AddWeaponHorizontalRecoil(float Recoil) = 0;
 
 	/** Updates the weapon's HUD with the current ammo count */
 	virtual void UpdateWeaponHUD(int32 CurrentAmmo, int32 MagazineSize) = 0;

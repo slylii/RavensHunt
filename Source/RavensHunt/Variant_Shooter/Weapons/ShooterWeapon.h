@@ -13,79 +13,98 @@ class AShooterProjectile;
 class USkeletalMeshComponent;
 class UAnimMontage;
 class UAnimInstance;
+class UDamageType;
+class UNiagaraSystem;
+
+UENUM(BlueprintType)
+enum class EShooterFireMode : uint8
+{
+	Projectile UMETA(DisplayName = "Projectile"),
+	Hitscan UMETA(DisplayName = "Hitscan")
+};
 
 /**
- *  Base class for a simple first person shooter weapon
- *  Provides both first person and third person perspective meshes
- *  Handles ammo and firing logic
- *  Interacts with the weapon owner through the ShooterWeaponHolder interface
+ * Base class for a simple first person shooter weapon
+ * Provides both first person and third person perspective meshes
+ * Handles ammo and firing logic
+ * Interacts with the weapon owner through the ShooterWeaponHolder interface
  */
 UCLASS(abstract)
 class RAVENSHUNT_API AShooterWeapon : public AActor
 {
 	GENERATED_BODY()
-	
+
 	/** First person perspective mesh */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
-	USkeletalMeshComponent* FirstPersonMesh;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh;
 
 	/** Third person perspective mesh */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
-	USkeletalMeshComponent* ThirdPersonMesh;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> ThirdPersonMesh;
 
 protected:
 
 	/** Cast pointer to the weapon owner */
-	IShooterWeaponHolder* WeaponOwner;
+	IShooterWeaponHolder* WeaponOwner = nullptr;
+
+	/** Type of fire used by this weapon */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Fire")
+	EShooterFireMode FireMode = EShooterFireMode::Projectile;
 
 	/** Type of projectiles this weapon will shoot */
-	UPROPERTY(EditAnywhere, Category="Ammo")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ammo")
 	TSubclassOf<AShooterProjectile> ProjectileClass;
 
 	/** Number of bullets in a magazine */
-	UPROPERTY(EditAnywhere, Category="Ammo", meta = (ClampMin = 0, ClampMax = 100))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ammo", meta = (ClampMin = 0, ClampMax = 100))
 	int32 MagazineSize = 10;
 
 	/** Number of bullets in the current magazine */
 	int32 CurrentBullets = 0;
-	
+
 	/** Animation montage to play when firing this weapon */
-	UPROPERTY(EditAnywhere, Category="Animation")
-	UAnimMontage* FiringMontage;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> FiringMontage;
 
 	/** AnimInstance class to set for the first person character mesh when this weapon is active */
-	UPROPERTY(EditAnywhere, Category="Animation")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
 	TSubclassOf<UAnimInstance> FirstPersonAnimInstanceClass;
 
 	/** AnimInstance class to set for the third person character mesh when this weapon is active */
-	UPROPERTY(EditAnywhere, Category="Animation")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
 	TSubclassOf<UAnimInstance> ThirdPersonAnimInstanceClass;
 
 	/** Cone half-angle for variance while aiming */
-	UPROPERTY(EditAnywhere, Category="Aim", meta = (ClampMin = 0, ClampMax = 90, Units = "Degrees"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aim", meta = (ClampMin = 0, ClampMax = 90, Units = "Degrees"))
 	float AimVariance = 0.0f;
 
-	/** Amount of firing recoil to apply to the owner */
-	UPROPERTY(EditAnywhere, Category="Aim", meta = (ClampMin = 0, ClampMax = 100))
-	float FiringRecoil = 0.0f;
+	UPROPERTY(EditAnywhere, Category = "Aim", meta = (ClampMin = -100, ClampMax = 100))
+	float VerticalRecoil = 1.5f;
+
+	UPROPERTY(EditAnywhere, Category = "Aim", meta = (ClampMin = -100, ClampMax = 100))
+	float HorizontalRecoil = 0.5f;
 
 	/** Name of the first person muzzle socket where projectiles will spawn */
-	UPROPERTY(EditAnywhere, Category="Aim")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aim")
 	FName MuzzleSocketName;
 
 	/** Distance ahead of the muzzle that bullets will spawn at */
-	UPROPERTY(EditAnywhere, Category="Aim", meta = (ClampMin = 0, ClampMax = 1000, Units = "cm"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aim", meta = (ClampMin = 0, ClampMax = 1000, Units = "cm"))
 	float MuzzleOffset = 10.0f;
 
+	/** Maximum distance of a hitscan shot */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aim", meta = (ClampMin = 0, ClampMax = 100000, Units = "cm"))
+	float HitscanRange = 10000.0f;
+
 	/** If true, this weapon will automatically fire at the refire rate */
-	UPROPERTY(EditAnywhere, Category="Refire")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Refire")
 	bool bFullAuto = false;
 
-	/** Time between shots for this weapon. Affects both full auto and semi auto modes */
-	UPROPERTY(EditAnywhere, Category="Refire", meta = (ClampMin = 0, ClampMax = 5, Units = "s"))
+	/** Time between shots for this weapon */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Refire", meta = (ClampMin = 0, ClampMax = 5, Units = "s"))
 	float RefireRate = 0.5f;
 
-	/** Game time of last shot fired, used to enforce refire rate on semi auto */
+	/** Game time of last shot fired */
 	float TimeOfLastShot = 0.0f;
 
 	/** If true, the weapon is currently firing */
@@ -95,86 +114,85 @@ protected:
 	FTimerHandle RefireTimer;
 
 	/** Cast pawn pointer to the owner for AI perception system interactions */
-	TObjectPtr<APawn> PawnOwner;
+	TObjectPtr<APawn> PawnOwner = nullptr;
 
 	/** Loudness of the shot for AI perception system interactions */
-	UPROPERTY(EditAnywhere, Category="Perception", meta = (ClampMin = 0, ClampMax = 100))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Perception", meta = (ClampMin = 0, ClampMax = 100))
 	float ShotLoudness = 1.0f;
 
 	/** Max range of shot AI perception noise */
-	UPROPERTY(EditAnywhere, Category="Perception", meta = (ClampMin = 0, ClampMax = 100000, Units = "cm"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Perception", meta = (ClampMin = 0, ClampMax = 100000, Units = "cm"))
 	float ShotNoiseRange = 3000.0f;
 
 	/** Tag to apply to noise generated by shooting this weapon */
-	UPROPERTY(EditAnywhere, Category="Perception")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Perception")
 	FName ShotNoiseTag = FName("Shot");
 
-public:	
+	UPROPERTY(EditAnywhere, Category = "Effects")
+	TObjectPtr<UNiagaraSystem> MuzzleFlashEffect;
 
-	/** Constructor */
+	UPROPERTY(EditAnywhere, Category = "Effects")
+	TObjectPtr<UNiagaraSystem> ImpactEffect;
+
+public:
+
 	AShooterWeapon();
 
 protected:
-	
-	/** Gameplay initialization */
 	virtual void BeginPlay() override;
-
-	/** Gameplay Cleanup */
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
 
-protected:
-
-	/** Called when the weapon's owner is destroyed */
 	UFUNCTION()
 	void OnOwnerDestroyed(AActor* DestroyedActor);
 
 public:
-
-	/** Activates this weapon and gets it ready to fire */
 	void ActivateWeapon();
-
-	/** Deactivates this weapon */
 	void DeactivateWeapon();
-
-	/** Start firing this weapon */
 	void StartFiring();
-
-	/** Stop firing this weapon */
 	void StopFiring();
 
 protected:
-
-	/** Fire the weapon */
 	virtual void Fire();
-
-	/** Called when the refire rate time has passed while shooting semi auto weapons */
 	void FireCooldownExpired();
 
-	/** Fire a projectile towards the target location */
 	virtual void FireProjectile(const FVector& TargetLocation);
+	void FireHitscan();
 
-	/** Calculates the spawn transform for projectiles shot by this weapon */
+	void ProcessShotEffects();
+
 	FTransform CalculateProjectileSpawnTransform(const FVector& TargetLocation) const;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage", meta = (ClampMin = "0.0"))
+	float HitDamage = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")
+	TSubclassOf<UDamageType> HitDamageType;
 
 public:
 
-	/** Returns the first person mesh */
-	UFUNCTION(BlueprintPure, Category="Weapon")
-	USkeletalMeshComponent* GetFirstPersonMesh() const { return FirstPersonMesh; };
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	USkeletalMeshComponent* GetFirstPersonMesh() const
+	{
+		return FirstPersonMesh;
+	}
 
-	/** Returns the third person mesh */
-	UFUNCTION(BlueprintPure, Category="Weapon")
-	USkeletalMeshComponent* GetThirdPersonMesh() const { return ThirdPersonMesh; };
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	USkeletalMeshComponent* GetThirdPersonMesh() const
+	{
+		return ThirdPersonMesh;
+	}
 
-	/** Returns the first person anim instance class */
 	const TSubclassOf<UAnimInstance>& GetFirstPersonAnimInstanceClass() const;
 
-	/** Returns the third person anim instance class */
 	const TSubclassOf<UAnimInstance>& GetThirdPersonAnimInstanceClass() const;
 
-	/** Returns the magazine size */
-	int32 GetMagazineSize() const { return MagazineSize; };
+	int32 GetMagazineSize() const
+	{
+		return MagazineSize;
+	}
 
-	/** Returns the current bullet count */
-	int32 GetBulletCount() const { return CurrentBullets; }
+	int32 GetBulletCount() const
+	{
+		return CurrentBullets;
+	}
 };

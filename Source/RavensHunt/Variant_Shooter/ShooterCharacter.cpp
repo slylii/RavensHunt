@@ -186,8 +186,14 @@ void AShooterCharacter::PlayFiringMontage(UAnimMontage* Montage)
 
 void AShooterCharacter::AddWeaponRecoil(float Recoil)
 {
-	// apply the recoil as pitch input
 	AddControllerPitchInput(Recoil);
+}
+
+void AShooterCharacter::AddWeaponHorizontalRecoil(float Recoil)
+{
+	const float HorizontalOffset = FMath::FRandRange(-Recoil, Recoil);
+
+	AddControllerYawInput(HorizontalOffset);
 }
 
 void AShooterCharacter::UpdateWeaponHUD(int32 CurrentAmmo, int32 MagazineSize)
@@ -197,19 +203,51 @@ void AShooterCharacter::UpdateWeaponHUD(int32 CurrentAmmo, int32 MagazineSize)
 
 FVector AShooterCharacter::GetWeaponTargetLocation()
 {
-	// trace ahead from the camera viewpoint
 	FHitResult OutHit;
 
 	const FVector Start = GetFirstPersonCameraComponent()->GetComponentLocation();
-	const FVector End = Start + (GetFirstPersonCameraComponent()->GetForwardVector() * MaxAimDistance);
+	const FVector End = Start +
+		(GetFirstPersonCameraComponent()->GetForwardVector() * MaxAimDistance);
 
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 
-	GetWorld()->LineTraceSingleByChannel(OutHit, Start, End, ECC_Visibility, QueryParams);
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(
+		OutHit,
+		Start,
+		End,
+		ECC_Visibility,
+		QueryParams
+	);
 
-	// return either the impact point or the trace end
-	return OutHit.bBlockingHit ? OutHit.ImpactPoint : OutHit.TraceEnd;
+	DrawDebugLine(
+		GetWorld(),
+		Start,
+		End,
+		bHit ? FColor::Green : FColor::Red,
+		false,
+		2.0f,
+		0,
+		5.0f
+	);
+
+	if (bHit)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("Aim Trace HIT: Actor=%s | Component=%s | Location=%s"),
+			*GetNameSafe(OutHit.GetActor()),
+			*GetNameSafe(OutHit.GetComponent()),
+			*OutHit.ImpactPoint.ToString()
+		);
+
+		return OutHit.ImpactPoint;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Aim Trace NOTHING HIT"));
+
+	return End;
 }
 
 void AShooterCharacter::AddWeaponClass(const TSubclassOf<AShooterWeapon>& WeaponClass)

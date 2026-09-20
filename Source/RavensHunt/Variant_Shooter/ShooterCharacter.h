@@ -142,8 +142,9 @@ public:
 	/** Plays the firing montage for the weapon */
 	virtual void PlayFiringMontage(UAnimMontage* Montage) override;
 
-	/** Applies weapon recoil to the owner */
-	virtual void AddWeaponRecoil(float Recoil) override;
+	void AddWeaponRecoil(float Recoil) override;
+
+	void AddWeaponHorizontalRecoil(float Recoil) override;
 
 	/** Updates the weapon's HUD with the current ammo count */
 	virtual void UpdateWeaponHUD(int32 CurrentAmmo, int32 MagazineSize) override;
