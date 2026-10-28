@@ -59,6 +59,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ammo", meta = (ClampMin = 0, ClampMax = 100))
 	int32 MagazineSize = 10;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ammo", meta = (ClampMin = "0"))
+	int32 MaxReserveAmmo = 90;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ammo")
+	int32 ReserveAmmo = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ammo", meta = (ClampMin = "0.01", Units = "s"))
+	float ReloadDuration = 2.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ammo")
+	bool bIsReloading = false;
+
+	FTimerHandle ReloadTimer;
+
 	/** Number of bullets in the current magazine */
 	int32 CurrentBullets = 0;
 
@@ -77,6 +91,9 @@ protected:
 	/** Cone half-angle for variance while aiming */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aim", meta = (ClampMin = 0, ClampMax = 90, Units = "Degrees"))
 	float AimVariance = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|ADS",meta = (ClampMin = "0.0", ClampMax = "100.0", Units = "%"))
+	float AimVarianceReductionPercent = 75.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Aim", meta = (ClampMin = -100, ClampMax = 100))
 	float VerticalRecoil = 1.5f;
@@ -168,6 +185,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")
 	TSubclassOf<UDamageType> HitDamageType;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|ADS")
+	FVector AimLocationOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|ADS")
+	FRotator AimRotationOffset = FRotator::ZeroRotator;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|ADS", meta = (ClampMin = "0.1"))
+	float AimTransitionSpeed = 12.0f;
+
+	bool bIsAiming = false;
+
+	FTransform DefaultFirstPersonTransform;
+
+	void FinishReloading();
+
 public:
 
 	UFUNCTION(BlueprintPure, Category = "Weapon")
@@ -195,4 +227,27 @@ public:
 	{
 		return CurrentBullets;
 	}
+
+	void StartReloading();
+
+	UFUNCTION(BlueprintPure, Category = "Weapon|Ammo")
+	bool IsReloading() const
+	{
+		return bIsReloading;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Weapon|Ammo")
+	int32 GetReserveAmmo() const
+	{
+		return ReserveAmmo;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Weapon|Ammo")
+	bool CanReload() const;
+
+	void SetAiming(bool bNewAiming);
+
+	void InitializeADS();
+
+	virtual void Tick(float DeltaTime) override;
 };
