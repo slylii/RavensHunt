@@ -15,6 +15,8 @@
 
 AShooterCharacter::AShooterCharacter()
 {
+	PrimaryActorTick.bCanEverTick = true;
+
 	// create the noise emitter component
 	PawnNoiseEmitter = CreateDefaultSubobject<UPawnNoiseEmitterComponent>(TEXT("Pawn Noise Emitter"));
 
@@ -25,6 +27,11 @@ AShooterCharacter::AShooterCharacter()
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (GetFirstPersonCameraComponent())
+	{
+		DefaultCameraFOV = GetFirstPersonCameraComponent()->FieldOfView;
+	}
 
 	// reset HP to max
 	CurrentHP = MaxHP;
@@ -55,6 +62,16 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 		// Switch weapon
 		EnhancedInputComponent->BindAction(SwitchWeaponAction, ETriggerEvent::Triggered, this, &AShooterCharacter::DoSwitchWeapon);
+
+		// Reload
+		EnhancedInputComponent->BindAction(ReloadAction, ETriggerEvent::Started, this, &AShooterCharacter::DoReload);
+
+		// Aim
+		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &AShooterCharacter::DoStartAiming);
+
+		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &AShooterCharacter::DoStopAiming);
+
+		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &AShooterCharacter::DoStopAiming);
 	}
 
 }
@@ -166,18 +183,6 @@ void AShooterCharacter::DoSwitchWeapon()
 	}
 }
 
-void AShooterCharacter::AttachWeaponMeshes(AShooterWeapon* Weapon)
-{
-	const FAttachmentTransformRules AttachmentRule(EAttachmentRule::SnapToTarget, false);
-
-	// attach the weapon actor
-	Weapon->AttachToActor(this, AttachmentRule);
-
-	// attach the weapon meshes
-	Weapon->GetFirstPersonMesh()->AttachToComponent(GetFirstPersonMesh(), AttachmentRule, FirstPersonWeaponSocket);
-	Weapon->GetThirdPersonMesh()->AttachToComponent(GetMesh(), AttachmentRule, FirstPersonWeaponSocket);
-	
-}
 
 void AShooterCharacter::PlayFiringMontage(UAnimMontage* Montage)
 {
@@ -186,8 +191,14 @@ void AShooterCharacter::PlayFiringMontage(UAnimMontage* Montage)
 
 void AShooterCharacter::AddWeaponRecoil(float Recoil)
 {
-	// apply the recoil as pitch input
 	AddControllerPitchInput(Recoil);
+}
+
+void AShooterCharacter::AddWeaponHorizontalRecoil(float Recoil)
+{
+	const float HorizontalOffset = FMath::FRandRange(-Recoil, Recoil);
+
+	AddControllerYawInput(HorizontalOffset);
 }
 
 void AShooterCharacter::UpdateWeaponHUD(int32 CurrentAmmo, int32 MagazineSize)
@@ -197,7 +208,6 @@ void AShooterCharacter::UpdateWeaponHUD(int32 CurrentAmmo, int32 MagazineSize)
 
 FVector AShooterCharacter::GetWeaponTargetLocation()
 {
-	// trace ahead from the camera viewpoint
 	FHitResult OutHit;
 
 	const FVector Start = GetFirstPersonCameraComponent()->GetComponentLocation();
@@ -206,10 +216,27 @@ FVector AShooterCharacter::GetWeaponTargetLocation()
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 
-	GetWorld()->LineTraceSingleByChannel(OutHit, Start, End, ECC_Visibility, QueryParams);
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(OutHit, Start, End, ECC_Visibility, QueryParams);
 
-	// return either the impact point or the trace end
-	return OutHit.bBlockingHit ? OutHit.ImpactPoint : OutHit.TraceEnd;
+	DrawDebugLine(GetWorld(), Start, End, bHit ? FColor::Green : FColor::Red, false, 2.0f, 0, 5.0f);
+
+	if (bHit)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("Aim Trace HIT: Actor=%s | Component=%s | Location=%s"),
+			*GetNameSafe(OutHit.GetActor()),
+			*GetNameSafe(OutHit.GetComponent()),
+			*OutHit.ImpactPoint.ToString()
+		);
+
+		return OutHit.ImpactPoint;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Aim Trace NOTHING HIT"));
+
+	return End;
 }
 
 void AShooterCharacter::AddWeaponClass(const TSubclassOf<AShooterWeapon>& WeaponClass)
@@ -248,6 +275,8 @@ void AShooterCharacter::AddWeaponClass(const TSubclassOf<AShooterWeapon>& Weapon
 
 void AShooterCharacter::OnWeaponActivated(AShooterWeapon* Weapon)
 {
+	Weapon->SetAiming(bIsAiming);
+
 	// update the bullet counter
 	OnBulletCountUpdated.Broadcast(Weapon->GetMagazineSize(), Weapon->GetBulletCount());
 
@@ -325,4 +354,66 @@ bool AShooterCharacter::IsDead() const
 {
 	// the character is dead if their current HP drops to zero
 	return CurrentHP <= 0.0f;
+}
+
+void AShooterCharacter::DoReload()
+{
+	if (IsDead() || !IsValid(CurrentWeapon))
+	{
+		return;
+	}
+
+	CurrentWeapon->StartReloading();
+}
+
+void AShooterCharacter::AttachWeaponMeshes(AShooterWeapon* Weapon)
+{
+	const FAttachmentTransformRules AttachmentRule(EAttachmentRule::SnapToTarget, false);
+
+	Weapon->AttachToActor(this, AttachmentRule);
+
+	Weapon->GetFirstPersonMesh()->AttachToComponent(GetFirstPersonMesh(), AttachmentRule, FirstPersonWeaponSocket);
+
+	Weapon->GetThirdPersonMesh()->AttachToComponent(GetMesh(), AttachmentRule, ThirdPersonWeaponSocket);
+
+	Weapon->InitializeADS();
+}
+
+void AShooterCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	UCameraComponent* Camera = GetFirstPersonCameraComponent();
+
+	if (!Camera)
+	{
+		return;
+	}
+
+	const float TargetFOV = bIsAiming? AimFieldOfView : DefaultCameraFOV;
+
+	const float NewFOV = FMath::FInterpTo(Camera->FieldOfView, TargetFOV, DeltaTime, AimFOVTransitionSpeed);
+
+	Camera->SetFieldOfView(NewFOV);
+}
+
+void AShooterCharacter::DoStartAiming()
+{
+	if (IsDead() || !IsValid(CurrentWeapon))
+	{
+		return;
+	}
+
+	bIsAiming = true;
+	CurrentWeapon->SetAiming(true);
+}
+
+void AShooterCharacter::DoStopAiming()
+{
+	bIsAiming = false;
+
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->SetAiming(false);
+	}
 }

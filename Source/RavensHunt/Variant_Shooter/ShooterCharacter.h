@@ -39,6 +39,22 @@ protected:
 	UPROPERTY(EditAnywhere, Category ="Input")
 	UInputAction* SwitchWeaponAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> ReloadAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> AimAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aim|ADS", meta = (ClampMin = "1.0", ClampMax = "170.0"))
+	float AimFieldOfView = 65.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aim|ADS", meta = (ClampMin = "0.1"))
+	float AimFOVTransitionSpeed = 10.0f;
+
+	bool bIsAiming = false;
+
+	float DefaultCameraFOV = 90.0f;
+
 	/** Name of the first person mesh weapon socket */
 	UPROPERTY(EditAnywhere, Category ="Weapons")
 	FName FirstPersonWeaponSocket = FName("HandGrip_R");
@@ -101,6 +117,8 @@ protected:
 	/** Set up input action bindings */
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 
+	virtual void Tick(float DeltaTime) override;
+
 public:
 
 	/** Handle incoming damage */
@@ -132,6 +150,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Input")
 	void DoSwitchWeapon();
 
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	void DoReload();
+
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	void DoStartAiming();
+
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	void DoStopAiming();
+
 public:
 
 	//~Begin IShooterWeaponHolder interface
@@ -142,8 +169,9 @@ public:
 	/** Plays the firing montage for the weapon */
 	virtual void PlayFiringMontage(UAnimMontage* Montage) override;
 
-	/** Applies weapon recoil to the owner */
-	virtual void AddWeaponRecoil(float Recoil) override;
+	void AddWeaponRecoil(float Recoil) override;
+
+	void AddWeaponHorizontalRecoil(float Recoil) override;
 
 	/** Updates the weapon's HUD with the current ammo count */
 	virtual void UpdateWeaponHUD(int32 CurrentAmmo, int32 MagazineSize) override;
